@@ -1,0 +1,569 @@
+{
+  "name": "LAsST_TELEGRAM_REVIEW_V1 — GitHub -lastone_amin",
+  "nodes": [
+    {
+      "id": "c1c33c53-74c3-4719-ac5e-14d321d784bd",
+      "name": "Review Pipeline Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough",
+        "returnOutput": "allRuns"
+      }
+    },
+    {
+      "id": "4ae694c9-4782-4518-b486-943347c4fef2",
+      "name": "Normalize Review Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const s=JSON.parse(JSON.stringify($json.state||$json));\ns.settings={...s.settings,telegram_chat_id:'5731599300'};\ns.telegram_chat_id='5731599300';\nconst safeName=String(s.article?.slug||'article').replace(/[^a-zA-Z0-9_-]/g,'-').replace(/-+/g,'-').slice(0,80)||'article';\nconst escapeHtml=v=>String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\nconst binary={...($binary||{})};\nconst imgs=Array.isArray(s.images)?s.images:[];\nif(!binary.article){\n let body=String(s.article?.content_html||'');\n for(const im of imgs.filter(x=>x.role!=='featured')){\n  const marker='<!-- ARTICLE_IMAGE_'+Number(im.index)+' -->';\n  const figure='<figure><img width=\"1200\" height=\"630\" alt=\"'+escapeHtml(im.alt_text)+'\" src=\"data:image/webp;base64,'+im.base64+'\"></figure>';\n  body=body.replace(marker,figure);\n }\n const featured=imgs.find(x=>x.role==='featured');\n const featureFigure=featured?'<figure><img width=\"1200\" height=\"630\" alt=\"'+escapeHtml(featured.alt_text)+'\" src=\"data:image/webp;base64,'+featured.base64+'\"></figure>':'';\n const html='<!doctype html><html lang=\"ar\" dir=\"rtl\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>'+escapeHtml(s.article?.title)+'</title><style>body{max-width:900px;margin:40px auto;padding:20px;font-family:Arial;line-height:1.9}img{max-width:100%;height:auto}</style><h1>'+escapeHtml(s.article?.title)+'</h1>'+featureFigure+body+'</html>';\n binary.article={data:Buffer.from(html,'utf8').toString('base64'),mimeType:'text/html',fileName:safeName+'.html'};\n}\nif(!binary.image){\n const featured=imgs.find(x=>x.role==='featured');\n const imageBase64=featured?.base64||s.image_base64;\n if(imageBase64)binary.image={data:imageBase64,mimeType:'image/webp',fileName:featured?.file_name||s.image?.file_name||safeName+'-featured.webp'};\n}\nreturn [{json:s,binary,pairedItem:{item:0}}];"
+      }
+    },
+    {
+      "id": "11024df5-3fb2-4299-8241-8d67559ae19f",
+      "name": "Send Article Package",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        560,
+        0
+      ],
+      "parameters": {
+        "operation": "sendDocument",
+        "chatId": "={{ $json.settings?.telegram_chat_id || $json.telegram_chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "article",
+        "additionalFields": {
+          "caption": "={{ 'المقال + الصور + SEO\\n'+$json.article.title+'\\nالنسخة: '+$json.review_token+'\\nالمراجعة الآلية معطلة؛ القرار النهائي لك.' }}",
+          "disable_web_page_preview": true
+        },
+        "resource": "message",
+        "text": "={{ (\"⚠️ مسودة غير مكتملة للمراجعة — لم يتم التحقق القانوني.\\n\\n\"+$json.article.title+\"\\n\\n\"+String($json.review_warning_text||\"\").slice(0,500)+\"\\n\\n\"+String($json.article.content_html||\"\").replace(/<[^>]+>/g,\" \").replace(/&nbsp;/g,\" \").replace(/&amp;/g,\"&\").replace(/&lt;/g,\"<\").replace(/&gt;/g,\">\").replace(/&quot;/g,'\"').replace(/&#39;/g,\"'\").replace(/\\\\s+/g,\" \").slice(0,3300)).slice(0,4000) }}"
+      },
+      "webhookId": "1e195dc6-3e6e-44fc-b7b5-6a7ad513cd6f",
+      "credentials": {
+        "telegramApi": {
+          "id": "W8kR3LvkljuXvC94",
+          "name": "Telegram lastone_nehad 8967415235"
+        }
+      }
+    },
+    {
+      "id": "756b1996-6006-4b61-b566-1ea3d445c146",
+      "name": "Keep Article Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p=$('Normalize Review Input').item;const s=JSON.parse(JSON.stringify(p.json));s.telegram_document_id=$json.result?.message_id||$json.message_id;return [{json:s,...(p.binary?{binary:p.binary}:{}),pairedItem:{item:0}}];"
+      }
+    },
+    {
+      "id": "7ec992a8-36a0-46fe-a835-24fe90426eb6",
+      "name": "Send WebP Image",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        980,
+        0
+      ],
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "={{ $json.settings?.telegram_chat_id || $json.telegram_chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "image",
+        "additionalFields": {
+          "caption": "={{ $json.image.alt_text }}"
+        },
+        "resource": "message"
+      },
+      "webhookId": "e3891cdc-375e-4b2f-ae74-77249b02c929",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "telegramApi": {
+          "id": "W8kR3LvkljuXvC94",
+          "name": "Telegram lastone_nehad 8967415235"
+        }
+      }
+    },
+    {
+      "id": "f365972b-0c5e-4f9a-97b3-d52d96dac63d",
+      "name": "Awaiting Review State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const s=JSON.parse(JSON.stringify($('Keep Article Receipt').item.json));s.telegram_image_id=$json.result?.message_id||$json.message_id;s.review_deadline=s.review_deadline||$now.plus({hours:48}).toISO();return [{json:s}];"
+      }
+    },
+    {
+      "id": "aa99911f-4dbd-4fc5-9951-f4db18299960",
+      "name": "Review Request Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst sha=x=>require('crypto').createHash('sha256').update(String(x),'utf8').digest('hex');\nconst parse=v=>{if(v&&typeof v==='object')return v;return JSON.parse(String(v||'').trim().replace(/^\\x60\\x60\\x60(?:json)?\\s*/,'').replace(/\\s*\\x60\\x60\\x60$/,''));};\nconst plain=x=>String(x||'').replace(/<[^>]*>/g,' ').replace(/&[^;]+;/g,' ').replace(/\\s+/g,' ').trim();\n\nfunction articleSections(html){\n const hs=[...html.matchAll(/<h2\\b[^>]*>[\\s\\S]*?<\\/h2>/gi)];\n return hs.map((m,i)=>{\n  const start=m.index+m[0].length,end=i+1<hs.length?hs[i+1].index:html.length;\n  const raw=html.slice(start,end),tail=(raw.match(/(?:\\s|<!--\\s*ARTICLE_IMAGE_[123]\\s*-->)*$/)||[''])[0];\n  return {id:'section_'+i,heading:m[0].replace(/<[^>]*>/g,'').trim(),start,end:end-tail.length,body_html:raw.slice(0,raw.length-tail.length)};\n });\n}\n\nreturn $input.all().map((item,i)=>{\n const s=item.json,sections=articleSections(String(s.article?.content_html||''));\n \n s.human_approval_required=true;\n s.review_article_hash=sha(JSON.stringify([s.article.title,s.article.content_html,s.article.seo_title,s.article.meta_description,s.article.slug,s.article.keyword,s.article.category_id??null,s.article.existing_tag_ids??[]]));\n s.review_article_version=s.article_version?.version||('revision-'+String(s.revision||0));\n const report={completion_review:s.completion_review,writing_plan:s.writing_plan,writing_execution:s.writing_execution,title:s.article.title,article_hash:s.review_article_hash,article_version:s.review_article_version,review_token:s.review_token,style_brief:s.style_brief,style_review:s.style_review,human_editor:s.human_editor,legal_recheck:s.legal_recheck,legal_baseline_article:s.legal_baseline_article,current_article:s.article,notes:s.review_warning_text};\n s.editorial_report=report;\n\n const esc=v=>String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\n const labels={opening_specificity:'خصوصية الافتتاح',legal_clarity:'وضوح القانون',practical_depth:'العمق العملي',natural_flow:'سلاسة التدفق',non_repetition:'عدم التكرار',reader_usefulness:'فائدة القارئ',style_identity:'هوية الأسلوب'};\n const scoreRows=Object.entries(s.style_review?.dimensions||{}).map(([k,v])=>'<tr><td>'+esc(labels[k]||k)+'</td><td>'+esc(v.score??'غير متاح')+' / '+esc(v.max)+'</td><td>'+esc(v.evidence)+'</td><td>'+esc(v.fix)+'</td></tr>').join('');\n const diffs=[...(s.legal_recheck?.differences||[]),...(s.human_editor?.legal_review_needed||[])];\n const diffRows=diffs.map(d=>'<tr><td>'+esc(d.location||d.category)+'</td><td>'+esc(d.before)+'</td><td>'+esc(d.after)+'</td><td>'+esc(d.explanation||d.reason)+'</td></tr>').join('');\n const changeRows=(s.human_editor?.change_log||[]).map(d=>'<tr><td>'+esc(d.location)+'</td><td>'+esc(d.before)+'</td><td>'+esc(d.after)+'</td><td>'+esc(d.reason)+'</td></tr>').join('');\n const doc='<!doctype html><html lang=\"ar\" dir=\"rtl\"><meta charset=\"utf-8\"><title>تقرير المراجعة</title><style>body{font-family:Arial;max-width:1100px;margin:32px auto;padding:20px;line-height:1.8;color:#172438}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px;vertical-align:top}pre{white-space:pre-wrap;overflow-wrap:anywhere}.note{background:#fff4d4;padding:12px}</style><h1>'+esc(s.article.title)+'</h1><p>نسخة: '+esc(s.review_article_version)+'<br>Hash: '+esc(s.review_article_hash)+'</p><p class=\"note\">الدرجات مؤشرات جودة تحريرية وليست إثباتًا لهوية الكاتب. الملاحظات القانونية لا تمنع مرور المقال؛ قرار الموافقة أو الرفض لك.</p><h2>تقييم الأسلوب: '+esc(s.style_review?.total??'غير متاح')+' / 100</h2><p>المطلوب 85 على الأقل وكل بُعد 60% على الأقل. النتيجة: '+esc(s.style_review?.decision)+'</p><table><tr><th>البعد</th><th>الدرجة</th><th>الدليل</th><th>التحسين</th></tr>'+scoreRows+'</table><h2>الفروق القانونية المحتملة</h2><p>'+esc(s.legal_recheck?.summary)+'</p><table><tr><th>الموضع</th><th>قبل</th><th>بعد</th><th>سبب المراجعة</th></tr>'+diffRows+'</table><pre>'+esc(JSON.stringify({uncertainties:s.legal_recheck?.uncertainties,number_changes:s.legal_recheck?.deterministic},null,2))+'</pre><h2>سجل التحرير</h2><table><tr><th>الموضع</th><th>قبل</th><th>بعد</th><th>السبب</th></tr>'+changeRows+'</table><h2>تنبيهات المراجعة</h2><pre>'+esc(s.review_warning_text)+'</pre><details><summary>Style Brief والمراجع المعتمدة</summary><pre>'+esc(JSON.stringify(s.style_brief,null,2))+'</pre></details><details><summary>النسخة قبل التحرير</summary><pre>'+esc(s.legal_baseline_article?.content_html)+'</pre></details><details><summary>النسخة الحالية</summary><pre>'+esc(s.article.content_html)+'</pre></details></html>';\n item.binary={...(item.binary||{}),editorial_report:{data:Buffer.from(doc,'utf8').toString('base64'),mimeType:'text/html',fileName:'editorial-review-'+String(s.topic?.topic_id||'article').replace(/[^a-zA-Z0-9_-]/g,'_')+'.html'}};\n\ns.review_section_options=['تحديد تلقائي من الملاحظات',...sections.map(x=>x.id+' | '+x.heading),'العنوان الرئيسي فقط','عنوان SEO فقط','وصف الميتا فقط','كل نص المقال'];\n return {json:s,...(item.binary?{binary:item.binary}:{}),pairedItem:{item:i}};\n});\n"
+      }
+    },
+    {
+      "id": "2fe821b8-5bac-4a65-9eae-00ac2fa4739d",
+      "name": "Telegram Decision",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1640,
+        0
+      ],
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "={{ $json.settings?.telegram_chat_id || $json.telegram_chat_id }}",
+        "message": "={{ (\"المقال: \"+$json.article.title+\"\\n\"+String($json.review_warning_text||\"راجع التقرير المرفق\").slice(0,2500)+\"\\n\\nالقرار النهائي لك: موافقة = مسودة WordPress، رفض = عدم الإنشاء، تعديل = تنفيذ ملاحظاتك.\\nالمراجعة الآلية معطلة؛ لم تُحسب درجات جودة.\\nنسخة: \"+$json.review_article_version+\"\\nHash: \"+$json.review_article_hash).replace(/[&<>_*\\x60\\[\\]\\\\]/g,\" \") }}",
+        "responseType": "customForm",
+        "defineForm": "json",
+        "jsonOutput": "={{ JSON.stringify([{fieldLabel:\"اسم المراجع\",fieldType:\"text\",requiredField:true},{fieldName:\"article_hash\",fieldType:\"hiddenField\",fieldValue:$json.review_article_hash},{\"fieldLabel\":\"القرار\",\"fieldType\":\"dropdown\",\"fieldOptions\":{\"values\":[{\"option\":\"موافقة\"},{\"option\":\"تعديل\"},{\"option\":\"رفض\"}]},\"requiredField\":true},{\"fieldLabel\":\"نطاق التعديل\",\"fieldType\":\"dropdown\",\"defaultValue\":\"تعديل النص فقط\",\"fieldOptions\":{\"values\":[{\"option\":\"تعديل النص فقط\"},{\"option\":\"تعديل النص والصور\"}]},\"requiredField\":false},{fieldLabel:\"القسم المطلوب تعديله\",fieldType:\"dropdown\",defaultValue:\"تحديد تلقائي من الملاحظات\",fieldOptions:{values:($json.review_section_options||['تحديد تلقائي من الملاحظات']).map(option=>({option}))},requiredField:false},{\"fieldLabel\":\"ملاحظات التعديل\",\"fieldType\":\"textarea\",\"placeholder\":\"مثال: أعد صياغة الخلاصة القانونية فقط لتكون أوضح. لتغيير الصور اختر تعديل النص والصور واذكر المطلوب.\",\"requiredField\":false},{fieldName:\"review_token\",fieldType:\"hiddenField\",fieldValue:$json.review_token}]) }}",
+        "options": {
+          "messageButtonLabel": "مراجعة واتخاذ القرار",
+          "responseFormTitle": "قرار مراجعة المقال",
+          "responseFormDescription": "={{ $json.article.title+\" — أدخل اسمك لتسجيل قرارك. الهوية مدخلة ذاتيًا وليست موثقة بحساب Telegram. \"+$json.review_token }}",
+          "responseFormButtonLabel": "إرسال القرار",
+          "limitWaitTime": {
+            "values": {
+              "limitType": "atSpecifiedTime",
+              "maxDateAndTime": "={{ $json.review_deadline }}"
+            }
+          },
+          "appendAttribution": false
+        }
+      },
+      "webhookId": "dd165753-0db7-4bc2-8218-08c914f8dd42",
+      "credentials": {
+        "telegramApi": {
+          "id": "W8kR3LvkljuXvC94",
+          "name": "Telegram lastone_nehad 8967415235"
+        }
+      }
+    },
+    {
+      "id": "0692b891-24cc-4280-91a7-87fba0b49d6f",
+      "name": "Parse Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nconst sha=x=>require('crypto').createHash('sha256').update(String(x),'utf8').digest('hex');\nconst parse=v=>{if(v&&typeof v==='object')return v;return JSON.parse(String(v||'').trim().replace(/^\\x60\\x60\\x60(?:json)?\\s*/,'').replace(/\\s*\\x60\\x60\\x60$/,''));};\nconst plain=x=>String(x||'').replace(/<[^>]*>/g,' ').replace(/&[^;]+;/g,' ').replace(/\\s+/g,' ').trim();\n\n const s=JSON.parse(JSON.stringify($('Review Request Context').item.json)),d=$json.data||{},expired=s.review_deadline&&Date.parse(s.review_deadline)<=Date.now();\n if(!d['القرار']&&expired){s.decision='timeout';s.reason='انتهت مهلة المراجعة دون قرار';}\n else{\n  if(expired)throw new Error('Expired review token');\n  if(d.review_token!==s.review_token||d.article_hash!==s.review_article_hash)throw new Error('Stale or mismatched article revision');\n  if(!String(d['اسم المراجع']||'').trim())throw new Error('Reviewer name required');\n  s.decision=({'موافقة':'approve','تعديل':'revise','رفض':'reject'})[d['القرار']];if(!s.decision)throw new Error('Unknown decision');\n  s.feedback=String(d['ملاحظات التعديل']||'').trim();s.revision_scope=String(d['نطاق التعديل']||'تعديل النص فقط').trim()==='تعديل النص والصور'?'text_and_images':'text_only';\n  s.revision_target=String(d['القسم المطلوب تعديله']||'تحديد تلقائي من الملاحظات').trim();\n  if(s.decision==='revise'&&!s.feedback){s.decision='missing_feedback';s.reason='اكتب التعديلات المطلوبة.';}\n }\n const at=new Date().toISOString();\n s.approval_audit={audit_id:sha([s.review_token,s.review_article_hash,s.decision,at].join('|')),review_token:s.review_token,article_hash:s.review_article_hash,article_version:s.review_article_version,topic_id:String(s.topic?.topic_id||''),reviewer_name:String(d['اسم المراجع']||'').trim()||'no_response',identity_source:'self_reported_review_form',identity_verified:false,decided_at:at,decision:s.decision,human_approval_required:true,style_score:typeof s.style_review?.total==='number'&&Number.isFinite(s.style_review.total)?s.style_review.total:null,change_summary:JSON.stringify(s.human_editor?.change_log||[]),report_json:JSON.stringify({...s.editorial_report,feedback:s.feedback||'',decision:s.decision})};\n if(s.decision==='approve'){s.approved_article_hash=sha(JSON.stringify([s.article.title,s.article.content_html,s.article.seo_title,s.article.meta_description,s.article.slug,s.article.keyword,s.article.category_id??null,s.article.existing_tag_ids??[]]));s.approved_image_hash=sha(JSON.stringify(s.images||[]));}\n return [{json:s}];\n"
+      }
+    },
+    {
+      "id": "4b2c988e-c2cb-4162-b174-839b4aebc2f8",
+      "name": "Review Request Only?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.decision === 'missing_feedback' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4b432d47-5496-426e-bed1-b376a085daaf",
+      "name": "Save Human Review Audit",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2660,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "8VZPVL0hPf8czDZZ"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "audit_id": "={{ $json.approval_audit.audit_id }}",
+            "review_token": "={{ $json.approval_audit.review_token }}",
+            "article_hash": "={{ $json.approval_audit.article_hash }}",
+            "article_version": "={{ $json.approval_audit.article_version }}",
+            "topic_id": "={{ $json.approval_audit.topic_id }}",
+            "reviewer_name": "={{ $json.approval_audit.reviewer_name }}",
+            "identity_source": "={{ $json.approval_audit.identity_source }}",
+            "decision": "={{ $json.approval_audit.decision }}",
+            "change_summary": "={{ $json.approval_audit.change_summary }}",
+            "report_json": "={{ $json.approval_audit.report_json }}",
+            "decided_at": "={{ $json.approval_audit.decided_at }}",
+            "human_approval_required": "={{ $json.approval_audit.human_approval_required }}",
+            "identity_verified": "={{ $json.approval_audit.identity_verified }}",
+            "style_score": "={{ $json.approval_audit.style_score }}"
+          },
+          "schema": [
+            {
+              "id": "audit_id",
+              "displayName": "audit_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "review_token",
+              "displayName": "review_token",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "article_hash",
+              "displayName": "article_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "article_version",
+              "displayName": "article_version",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "topic_id",
+              "displayName": "topic_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviewer_name",
+              "displayName": "reviewer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "identity_source",
+              "displayName": "identity_source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "change_summary",
+              "displayName": "change_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "report_json",
+              "displayName": "report_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "decided_at",
+              "displayName": "decided_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "human_approval_required",
+              "displayName": "human_approval_required",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "identity_verified",
+              "displayName": "identity_verified",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "style_score",
+              "displayName": "style_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "12d10513-18b3-42c6-9320-8b5d9bcb445d",
+      "name": "Return Audited Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2900,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const s=JSON.parse(JSON.stringify($('Parse Decision').item.json));s.approval_audit_saved=true;return [{json:s}];"
+      }
+    }
+  ],
+  "connections": {
+    "Review Pipeline Input": {
+      "main": [
+        [
+          {
+            "node": "Normalize Review Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Review Input": {
+      "main": [
+        [
+          {
+            "node": "Review Request Only?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Article Package": {
+      "main": [
+        [
+          {
+            "node": "Keep Article Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Article Receipt": {
+      "main": [
+        [
+          {
+            "node": "Send WebP Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WebP Image": {
+      "main": [
+        [
+          {
+            "node": "Awaiting Review State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Awaiting Review State": {
+      "main": [
+        [
+          {
+            "node": "Review Request Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Decision": {
+      "main": [
+        [
+          {
+            "node": "Parse Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Decision": {
+      "main": [
+        [
+          {
+            "node": "Save Human Review Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Request Only?": {
+      "main": [
+        [
+          {
+            "node": "Review Request Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Article Package",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Human Review Audit": {
+      "main": [
+        [
+          {
+            "node": "Return Audited Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Request Context": {
+      "main": [
+        [
+          {
+            "node": "Telegram Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "timezone": "Africa/Cairo",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromAList",
+    "callerIds": "EJgnYuTz5GwkiH4v"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "nodeGroups": [
+    {
+      "id": "8a89a79a-2383-499c-a6ca-c07e05b73e67",
+      "name": "Deliver Article and Images",
+      "nodeNames": [
+        "Normalize Review Input",
+        "Review Request Only?",
+        "Send Article Package",
+        "Keep Article Receipt",
+        "Send WebP Image",
+        "Awaiting Review State",
+        "Review Request Context"
+      ],
+      "description": "تسليم المقال والصور ثم قرار المستخدم؛ دون تقرير مراجعة آلية."
+    },
+    {
+      "id": "751ddc27-1ff9-4cba-83ec-19f0668ab7da",
+      "name": "Human Decision and Audit",
+      "nodeNames": [
+        "Telegram Decision",
+        "Parse Decision",
+        "Save Human Review Audit",
+        "Return Audited Decision"
+      ],
+      "description": "اسم المراجع المدخل ووقت القرار وhash النسخة؛ الهوية مدخلة ذاتيًا."
+    }
+  ],
+  "description": "Imported copy of LegalAI-Platform GitHub snapshot. Legal article pipeline; source workflows preserved."
+}
